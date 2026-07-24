@@ -81,11 +81,19 @@
 練習 3
 
 1. `/Products/LowStock` 不帶參數 → 門檻 10 的結果；帶 `?threshold=3` → 結果隨之改變
+   - agent 先用 curl 驗證過一輪（不帶參數時 input 顯示 `value="10"`；`?threshold=3` 回 200 且結果不同），我自己在瀏覽器上又確認了一次
 2. `?threshold=0`、`?threshold=-1` → 頁面顯示驗證錯誤，不是 500
+   - curl 檢查兩者都是 HTTP 200，表單顯示「門檻必須大於 0」，input 保留原本輸入的值（0 / -1），不是 500 錯誤頁
 3. 售出數量欄位排除了 Cancelled 訂單（可用一筆已取消的訂單驗證）
+   - 對應測試 `GetLowStock_RecentSoldQuantity_ExcludesCancelledOrders`：同商品建一筆 Confirmed（賣 3）、一筆 Cancelled（賣 5），驗證近 30 天售出數量只算 3
 4. 停售（已停售 badge）商品不出現在列表
+   - 對應測試 `GetLowStock_ExcludesInactiveProducts`：庫存 5、`IsActive=false` 的商品即使低於門檻也不會出現
 5. 程式分層與命名跟既有的 Products 功能一致（請 agent 自我 review 一次，並自己確認）
+   - agent 自我 review：Controller 只轉接＋映射 ViewModel，「近 30 天」的日期換算放在 service，EF Core 查詢在 repository，View 綁 ViewModel，跟既有 `ProductsController`/`ProductService` 同一套寫法
+   - 過程中有一個計畫外的調整：原計畫要用一個 LEFT JOIN 查詢一次撈完，但在 EF Core InMemory 測試環境跑不過（`Nullable object must have a value`，InMemory provider 對 GroupBy+LEFT JOIN 的已知限制），改成兩條查詢（低庫存商品 + 近 30 天銷量分組加總）在記憶體組合，查詢次數固定是 2 次、不是 N+1，agent 有主動講清楚這個落差
 6. 至少 3 個新測試，`dotnet test` 全綠
+   - 新增 3 個：`GetLowStock_FiltersByThresholdAndSortsByStockAscending`、`GetLowStock_ExcludesInactiveProducts`、`GetLowStock_RecentSoldQuantity_ExcludesCancelledOrders`
+   - `dotnet test`：35 個測試全部通過
 
 練習 4
 
