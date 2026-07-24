@@ -40,8 +40,17 @@
 練習 1
 
 1. 我能不看筆記說出三個專案（Web/Core/Infrastructure）各自的職責
+   - Web：Controller / ViewModel / View，只做轉接與顯示
+   - Core：Domain model、service 介面與商業邏輯（折扣、庫存、狀態轉移）
+   - Infrastructure：EF Core DbContext、repository、migration、種子資料
 2. 我核對過 agent 描述的建單流程，且**至少找出一處不精確或過度簡化的說法**
+   - 產生 CLAUDE.md 時，agent 寫「折扣集中在 `OrderService.CalculateTotal`，不要在別處重算」。
+     對照 `OrderService.CreateOrderAsync` 後發現這句話過度簡化：Gold 會員的 `unitPrice`
+     在建單當下就先打了一次折（`if (customer.Tier == CustomerTier.Gold) unitPrice = ...`），
+     `CalculateTotal` 又對 subtotal 打第二次折——折扣邏輯其實出現在兩處，不是只有 `CalculateTotal`。
 3. 我知道商業邏輯應該放在哪一層、新增頁面要動哪些地方
+   - 商業邏輯放 `OrderHub.Core/Services`，透過 interface 注入給 Controller
+   - 新增頁面要動：Controller（轉接）、Service（邏輯）、Repository（如需新查詢）、ViewModel、View、對應測試
 
 練習 2
 
