@@ -15,4 +15,10 @@ public class ProductService : IProductService
     public Task<IReadOnlyList<Product>> GetAllAsync() => _productRepository.GetAllAsync();
 
     public Task<IReadOnlyList<Product>> GetActiveAsync() => _productRepository.GetActiveAsync();
+
+    public Task<IReadOnlyList<LowStockProduct>> GetLowStockAsync(int threshold)
+    {
+        var recentSalesSince = DateTime.UtcNow.AddDays(-30);
+        return _productRepository.GetLowStockAsync(threshold, recentSalesSince);
+    }
 }
