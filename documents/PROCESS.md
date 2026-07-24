@@ -55,11 +55,28 @@
 練習 2
 
 1. 三個 bug 我都先在頁面上重現過，才開始找程式
+   - 客訴 1：建立訂單 #201，第 1 頁看不到，一開始誤記翻到第 11 頁看到，後來核對資料庫發現看錯，實際是第 10 頁看到 #178（最舊的一筆）
+   - 客訴 2：訂單 #202（商品原價 160，Gold 會員），一開始口誤講成「原價100/小計100/應付90」，後來重新核對明細頁才確認正確數字是小計 144、應付 129.6
+   - 客訴 3：SKU-1001 原始庫存 25，訂單 #205 建立後變 24，取消後仍是 24
 2. 我給 agent 的資訊包含具體觀察（頁碼／金額數字／庫存數字），而不是只貼客訴原文
+   - 每個 bug 都附了訂單編號、頁碼、金額或庫存的實際數字，agent 遇到數字兜不攏時（客訴 1、2 都發生過）會回頭用 `sqlcmd` 查資料庫核對，而不是照單全收
 3. 每個修復都回到頁面驗證過症狀消失
+   - 客訴 1：確認第 1 頁看得到 #201、最後一頁不再空白
+   - 客訴 2：另建一筆 Gold 新訂單（原價 1420），確認小計 1420、應付 1278（只打一次折）
+   - 客訴 3：另建一筆新訂單並取消，確認庫存正確加回
+   - 三個都有留意到：已存在的舊訂單/舊資料（#202 的價格快照、#205 卡住的庫存）不會被程式修復回溯更正，需要用新資料驗證
 4. 每個 bug 都補了一個回歸測試，`dotnet test` 全綠
+   - 三個回歸測試都先在修復前（用 `git stash` 暫時還原成 bug 版本）跑過一次確認會失敗，再套用修復確認轉綠，不是憑感覺寫斷言
+   - 最終 `dotnet test`：32 個測試全部通過
 5. 三個獨立 commit，message 說明症狀與根因
+   - `d0b9ba1` 訂單分頁 off-by-one（`Skip(page * pageSize)` 少了 `-1`）
+   - `4390a84` Gold 會員折扣算兩次（建單時 unitPrice 先打一次折，`CalculateTotal` 又打一次）
+   - `7526d17` 取消訂單庫存沒回補（`order.Status` 先改成 Cancelled 才檢查狀態，判斷式永遠是 false）
 6. （思考題）為什麼原本的測試沒抓到這三個 bug？
+   - 客訴 1：`GetOrders_ReportsTotalCountAndTotalPages` 只斷言 `TotalCount`／`TotalPages` 的數字對不對，從沒斷言 `Items` 裡實際回傳的是「哪幾筆」，所以分頁位移算錯也測不出來
+   - 客訴 2：折扣相關測試（`CalculateTotal_AppliesTierDiscountOnSubtotal` 等）都是直接建構 `Order`／`OrderItem` 呼叫 `CalculateTotal`，繞過了 `CreateOrderAsync`；唯一走 `CreateOrderAsync` 的快照測試（`CreateOrder_SnapshotsCurrentUnitPrice`）又只用預設 Standard 會員测，Gold 分支從沒被端到端測過
+   - 客訴 3：取消訂單的測試只斷言 `order.Status` 變成 Cancelled，沒有任何測試斷言取消後商品的 `StockQuantity`
+   - 共同點：每個 bug 都躲在「單元測試各自獨立驗證沒錯，但兩段邏輯兜在一起／副作用沒斷言」的縫隙裡
 
 練習 3
 
