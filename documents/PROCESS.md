@@ -98,8 +98,12 @@
 練習 4
 
 1. 重構後 `dotnet test` 全綠
+   - 35 個測試全部通過（含練習 2、3 補的回歸測試）；`dotnet build` 一開始因為 Visual Studio 開著網站鎖住 Web 專案的 dll/pdb 而失敗，停掉 VS 裡跑的網站後重新建置成功、0 警告 0 錯誤
 2. 我能說出這次重構「改善了什麼、沒有改變什麼」
+   - 改善：把 `CreateOrderAsync` 裡「請求本身合不合法」（客戶存在、明細非空、數量、重複商品）跟「逐行商品能否成立＋扣庫存」兩種不同性質的檢查，拆成 `ValidateRequestShape` 和 `ValidateLineAndReserveStock` 兩個獨立、可以各自看懂的私有方法，主體邏輯縮短很多
+   - 沒有改變：錯誤訊息文字、檢查順序（客戶→明細非空→數量→重複→逐行商品/庫存）、多筆錯誤累積的方式、public 介面（`IOrderService`/`ICustomerService` 沒動），沒新增檔案或類別
 3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）
+   - commit 前用 `git diff` 看過完整改動範圍，確認只動了 `OrderService.cs` 一個檔案，且兩個抽出來的方法邏輯跟原本逐行比對過是一致的
 
 ---
 
