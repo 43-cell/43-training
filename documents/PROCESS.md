@@ -139,7 +139,7 @@
 練習 5（MCP 不是只有 tools：Resources 與 Prompts）
 
 1. MCP Inspector：Resources 分頁讀得到 `orderhub://discount-rules`；Prompts 分頁能帶 `threshold` 參數取得展開後的訊息
-   - **一樣沒有實際跑 Inspector**（延續練習 4 沒做到的缺口），改用 Claude Code 內建的 `ListMcpResourcesTool`／`ReadMcpResourceTool` 直接向 orderhub server 確認：`orderhub://discount-rules` 存在、內容正確；Prompt 的展開是透過實際觸發 `/mcp__orderhub__low_stock_report` slash command 驗證的，展開文字跟 `OrderHubPrompts.cs` 裡寫的一致——都驗證到了，只是走的不是 Inspector 這條路
+   - **後續補做**：延續練習 4 的做法，在自己的終端機跑 `npx @modelcontextprotocol/inspector dotnet run --project src/OrderHub.Mcp`（先在 Claude Code `/mcp` 斷開 orderhub 釋放檔案鎖，完成後再重新 reconnect）。Resources 分頁點進 `orderhub://discount-rules`，內容跟 `OrderHubResources.cs` 裡寫的一致（Standard 不打折／Silver 95 折／Gold 9 折）；Prompts 分頁用 `threshold=10` 執行 `low_stock_report`，展開出來的文字跟 `OrderHubPrompts.cs` 裡寫的那段提示一致（提到 low_stock 工具、threshold=10、採購建議表格式要求）——這次是真的走 Inspector 這條路驗證到的，不是像練習 4 一開始那樣繞道用其他工具代替
 2. Claude Code：`@` 選 resource 後問折扣問題，agent 用 resource 內容作答
    - 問「Gold 會員買 1000 元商品應付多少?」，agent 讀 `orderhub://discount-rules`（Gold 9 折）算出 900 元，沒有讀 `OrderService.cs`
 3. Claude Code：`/mcp__orderhub__low_stock_report` 一鍵產出採購建議表
