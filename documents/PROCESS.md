@@ -112,6 +112,30 @@
 3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）
    - commit 前用 `git diff` 看過完整改動範圍，確認只動了 `OrderService.cs` 一個檔案，且兩個抽出來的方法邏輯跟原本逐行比對過是一致的
 
+### 第二階段 — 活動 2：自建 MCP Server
+
+練習 3（註冊給 agent，做 before/after 對照）
+
+1. Claude Code 輸入 `/mcp` 能看到 orderhub server 與三個工具
+   - 有，`get_order`／`low_stock`／`customer_orders` 三個都能列出且能實際呼叫
+2. 對照實驗完成且記錄
+   - 見附錄片段 6：同一句「哪些商品庫存低於 5?」，沒 MCP 時要讀 `appsettings.json`、確認表名/欄位名、手寫 SQL、排查 `sqlcmd` 中文亂碼共四步；有 MCP 一次工具呼叫拿到乾淨的 UTF-8 結構化結果，兩邊查到的商品/庫存數字一致
+3. `.mcp.json`（或 config 片段說明）進 git，一個獨立 commit
+   - `10c4048` — 只含 `training-repo/.mcp.json` 這一個檔案
+
+練習 4（會改資料的工具：cancel_order）
+
+1. MCP Inspector 中 `cancel_order` 的 annotations 如所標，三個唯讀工具顯示 read-only
+   - **沒有實際跑 MCP Inspector**，這題只用讀原始碼確認：`OrderHubTools.cs` 裡 `CancelOrder` 標了 `[McpServerTool(Destructive = true, Idempotent = false)]`，`GetOrder`／`LowStock`／`CustomerOrders` 都補上了 `[McpServerTool(ReadOnly = true)]`——source 層級對，但沒有透過 Inspector UI 獨立驗證過 annotations 實際顯示效果，這點還沒做到
+2. 對 agent 說「幫我取消訂單 X」：觀察權限確認提示——按允許之前資料不會被動到
+   - 確認：呼叫 `cancel_order(206)` 和 `cancel_order(203)` 前，Claude Code 兩次都跳出權限確認對話框，按 allow 後才實際執行
+3. 取消一筆待處理訂單成功，回 `/Products` 頁面確認庫存有回補
+   - 訂單 203（Pending，客戶陳志明/Gold，品項 SKU-1008×1、SKU-1011×1）：取消前 `SKU-1008` 庫存 51、`SKU-1011` 庫存 90；呼叫 `cancel_order(203)` 回「訂單 203 已取消,庫存已回補」；直接查資料庫核對取消後庫存變 52／91（各 +1），訂單狀態變 `Cancelled`
+4. 對同一筆訂單再取消一次、或挑一筆已出貨訂單取消：得到清楚的拒絕訊息而非 exception dump
+   - 訂單 206 原本就是 `Cancelled` 狀態，呼叫 `cancel_order(206)` 回「取消失敗:狀態為 Cancelled 的訂單不可取消」，是清楚的文字訊息，不是 stack trace
+5. 獨立 commit；PROCESS.md 記錄
+   - `e9593ad` — 只含 `OrderHubTools.cs`（新增 `CancelOrder`，並補三個既有工具的 `ReadOnly = true`）
+
 ---
 
 ## 附錄：值得留下的對話片段
@@ -165,3 +189,17 @@ sqlcmd -S localhost -d OrderHubTraining -E -Q "SELECT Sku, Name, StockQuantity F
 **開啟 MCP 後**：直接呼叫 `mcp__orderhub__low_stock({ threshold: 5 })`，一次工具呼叫拿到結構化 JSON，五筆商品的 Sku／正確 UTF-8 中文名稱／庫存量一次到位，不用猜表名或欄位名，也沒有編碼問題。
 
 **結果比對**：兩邊查到的商品與庫存數字完全一致——`SKU-1048`/2、`SKU-1005`/3、`SKU-1023`/3、`SKU-1014`/4、`SKU-1032`/4，只是沒 MCP 那邊要多繞四步而且中文名稱是亂碼，有 MCP 一次工具呼叫就乾淨拿到全部欄位。
+
+### 片段 7：cancel_order 這個「會改資料的工具」——連線卡住的除錯過程，以及成功/失敗兩條路徑的實測
+
+**背景**：`.mcp.json` 裡 `orderhub` 是 stdio server，Claude Code 會在連線/reconnect 時自己 `dotnet run --project src/OrderHub.Mcp` 把它 spawn 起來——這件事我原本不知道，所以在 `CancelOrder` 加進 `OrderHubTools.cs` 之後，我自己也手動在另一個終端機跑了同一行指令想確認能不能編譯。
+
+**卡住的過程**：新工具遲遲不出現在 agent 的工具清單裡，反覆 `/mcp` reconnect 都沒用。查下去發現 `bin/Debug/net8.0` 底下的 build 輸出被一個叫 `OrderHub.Mcp` 的 process 鎖住（`MSB3026` 錯誤，retry 9 次後編譯失敗）——agent 一開始誤判那個 process 是自己之前測試留下的殘留，直接把它 kill 掉，結果反而斷開了當下真正在用的 orderhub 連線（連 `get_order`／`low_stock` 都跟著斷線）。後來才確認：問題根源是我自己手動跑的 `dotnet run` 跟 Claude Code 自動 spawn 的那個 process 同時搶同一份 build 輸出的檔案鎖。
+
+**修好的方法**：把我手動跑的那個終端機 process 停掉，只留 Claude Code 自己管理的那一個，`/mcp` 重新 reconnect 後 `cancel_order` 才正常出現在工具清單。
+
+**成功路徑實測**：訂單 203（Pending，客戶陳志明/Gold，品項 SKU-1008×1、SKU-1011×1）。取消前查資料庫：`SKU-1008` 庫存 51、`SKU-1011` 庫存 90。呼叫 `cancel_order(203)` 前 Claude Code 跳出權限確認對話框，按 allow 後才實際執行，回傳「訂單 203 已取消,庫存已回補」；再查資料庫核對，兩個品項庫存分別變 52／91（各 +1），訂單狀態變成 `Cancelled`。
+
+**失敗路徑實測**：訂單 206 原本就是 `Cancelled`。呼叫 `cancel_order(206)` 同樣先跳權限確認，按 allow 後執行，回傳「取消失敗:狀態為 Cancelled 的訂單不可取消」——是一句清楚的文字訊息，不是 exception dump 或 stack trace。
+
+**跟片段 6 的差異**：片段 6 的三個工具都是唯讀的，agent 頂多「答錯」；`cancel_order` 是第一個會改資料庫的工具，這次實測到的重點不是「答案對不對」，而是「執行前有沒有人工確認、失敗時錯誤訊息夠不夠讓 agent 停手而不是瞎猜重試」——兩者都有做到。
