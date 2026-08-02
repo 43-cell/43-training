@@ -136,6 +136,21 @@
 5. 獨立 commit；PROCESS.md 記錄
    - `e9593ad` — 只含 `OrderHubTools.cs`（新增 `CancelOrder`，並補三個既有工具的 `ReadOnly = true`）
 
+練習 5（MCP 不是只有 tools：Resources 與 Prompts）
+
+1. MCP Inspector：Resources 分頁讀得到 `orderhub://discount-rules`；Prompts 分頁能帶 `threshold` 參數取得展開後的訊息
+   - **一樣沒有實際跑 Inspector**（延續練習 4 沒做到的缺口），改用 Claude Code 內建的 `ListMcpResourcesTool`／`ReadMcpResourceTool` 直接向 orderhub server 確認：`orderhub://discount-rules` 存在、內容正確；Prompt 的展開是透過實際觸發 `/mcp__orderhub__low_stock_report` slash command 驗證的，展開文字跟 `OrderHubPrompts.cs` 裡寫的一致——都驗證到了，只是走的不是 Inspector 這條路
+2. Claude Code：`@` 選 resource 後問折扣問題，agent 用 resource 內容作答
+   - 問「Gold 會員買 1000 元商品應付多少?」，agent 讀 `orderhub://discount-rules`（Gold 9 折）算出 900 元，沒有讀 `OrderService.cs`
+3. Claude Code：`/mcp__orderhub__low_stock_report` 一鍵產出採購建議表
+   - 觸發後展開成 `OrderHubPrompts.cs` 寫的那段指示，agent 呼叫 `low_stock(threshold=10)` 撈出 5 個低庫存商品，並產出 SKU／名稱／現有庫存／建議補貨量／理由的表格（見附錄片段 8，過程中暴露一個工具缺口）
+4. PROCESS.md 記錄 5c 第 3 點的思考；獨立 commit
+   - commit：`afa0685` — 只含 `Program.cs`（註冊 `WithResources`／`WithPrompts`）、`OrderHubResources.cs`、`OrderHubPrompts.cs`
+   - 思考題——折扣規則用 Resource 給，和讓 agent 自己去讀 `OrderService.cs`，差在哪？
+     Resource 是團隊共用、版本控制過的單一事實來源：規則只寫一次在 `DiscountRules()`，改版時只要改這一個地方，不管接上這個 MCP server 的是 Claude Code 還是 Codex，下次讀到都是最新版；讓 agent 自己讀程式碼則每次都要重新解析，商業邏輯一旦散落多處（像活動 1 客訴 2 發現的「Gold 折扣算兩次」那樣），不同次問同樣問題可能因為讀到的程式碼片段或理解角度不同而給出不一致答案
+   - prompt 範本放在 server，和每個人自己打一段話，差在哪？
+     範本放 server 上等於把「這句話該怎麼問」也版本控制、團隊共用——採購同事不用自己記得或重新想那段「請用 low_stock 工具…」的咒語，直接打 `/mcp__orderhub__low_stock_report` 就好；範本要調整（例如門檻改 15、報告欄位改格式）時只要改一個地方，所有人下次呼叫就是新版本。每個人自己打一段話則問法不一致、品質參差，也沒人知道「標準問法」是什麼
+
 ---
 
 ## 附錄：值得留下的對話片段
@@ -203,3 +218,13 @@ sqlcmd -S localhost -d OrderHubTraining -E -Q "SELECT Sku, Name, StockQuantity F
 **失敗路徑實測**：訂單 206 原本就是 `Cancelled`。呼叫 `cancel_order(206)` 同樣先跳權限確認，按 allow 後執行，回傳「取消失敗:狀態為 Cancelled 的訂單不可取消」——是一句清楚的文字訊息，不是 exception dump 或 stack trace。
 
 **跟片段 6 的差異**：片段 6 的三個工具都是唯讀的，agent 頂多「答錯」；`cancel_order` 是第一個會改資料庫的工具，這次實測到的重點不是「答案對不對」，而是「執行前有沒有人工確認、失敗時錯誤訊息夠不夠讓 agent 停手而不是瞎猜重試」——兩者都有做到。
+
+### 片段 8：Resource 與 Prompt 實測——折扣問答免讀程式碼，採購建議表卻暴露一個工具缺口
+
+**Resource 實測**：`/mcp` reconnect 後，用 `@` 附加 `orderhub` 的「會員折扣規則」resource，問「Gold 會員買 1000 元商品應付多少?」——agent 直接讀 `orderhub://discount-rules` 的內容（Gold 9 折）算出 900 元，全程沒有去讀 `OrderService.cs`。
+
+**Prompt 實測的小插曲**：第一次觸發時打成 `/orderhub:low_stock_report low_stock`（多帶了一個參數），回傳 `McpError -32603`；改用正確的 `/mcp__orderhub__low_stock_report`（不帶參數，走 threshold 預設值 10）才成功展開成 `OrderHubPrompts.cs` 裡寫的那段指示。
+
+**執行過程中暴露的工具缺口**：展開的指示要 agent「用 low_stock 工具撈出低庫存商品，再用其他工具了解這些商品的近期訂單狀況」——撈出 5 個低庫存商品（SKU-1048/1005/1023/1014/1032）後，發現 orderhub 目前**沒有任何一個工具能回答「哪些訂單包含這個商品」**：`get_order` 只能查單筆訂單、`customer_orders` 只能查某個客戶的訂單，都無法反查商品。最後是直接查資料庫、比照 `/Products/LowStock` 頁面同一套「近 30 天售出量、排除 Cancelled」邏輯，才算出每個商品的銷售速度並產出補貨建議（例如曜石機械鍵盤庫存 4、近 30 天賣 18 件，庫存撐不到一週，優先度最高；極光筆電支架庫存 3 但近 30 天賣 0 件，標記「先查原因」而非照公式硬補）。
+
+**跟片段 6、7 的關係**：片段 6 是「有沒有工具」的差異、片段 7 是「工具會不會改資料」的差異，這次是「prompt 範本寫的指示，超出了現有工具的能力範圍」——`low_stock_report` 這個 prompt 假設有辦法查到商品的近期訂單，但對應的 tool 從沒被造出來，等於提前寫好了一個工具還沒跟上的範本。這正好呼應練習 5 自己要想的思考題：如果「低庫存採購建議」是團隊常態需求，下一步該補的可能不是更好的 prompt 文字，而是一個真正的 `GetRecentOrdersByProduct` 之類的 tool。
