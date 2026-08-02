@@ -126,7 +126,7 @@
 練習 4（會改資料的工具：cancel_order）
 
 1. MCP Inspector 中 `cancel_order` 的 annotations 如所標，三個唯讀工具顯示 read-only
-   - **沒有實際跑 MCP Inspector**，這題只用讀原始碼確認：`OrderHubTools.cs` 裡 `CancelOrder` 標了 `[McpServerTool(Destructive = true, Idempotent = false)]`，`GetOrder`／`LowStock`／`CustomerOrders` 都補上了 `[McpServerTool(ReadOnly = true)]`——source 層級對，但沒有透過 Inspector UI 獨立驗證過 annotations 實際顯示效果，這點還沒做到
+   - **後續補做**：一開始在這個 agent session 裡跑 Inspector 一直失敗（`dotnet run --project src/OrderHub.Mcp` 的 build 輸出被 Claude Code 自己維護的 orderhub 連線鎖住，`MSB3027`），後來換成我自己在本機終端機跑 `npx @modelcontextprotocol/inspector dotnet run --project src/OrderHub.Mcp`（跑之前先在 Claude Code `/mcp` 把 orderhub 斷線釋放檔案鎖，Inspector 連上後才把 orderhub 重新 reconnect 回來），Tools 分頁確認：`cancel_order` 顯示 destructive，`get_order`／`low_stock`／`customer_orders` 三個都顯示 read-only，跟原始碼標註的 `[McpServerTool(Destructive = true, Idempotent = false)]`／`[McpServerTool(ReadOnly = true)]` 一致
 2. 對 agent 說「幫我取消訂單 X」：觀察權限確認提示——按允許之前資料不會被動到
    - 確認：呼叫 `cancel_order(206)` 和 `cancel_order(203)` 前，Claude Code 兩次都跳出權限確認對話框，按 allow 後才實際執行
 3. 取消一筆待處理訂單成功，回 `/Products` 頁面確認庫存有回補
