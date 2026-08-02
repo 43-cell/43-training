@@ -143,3 +143,11 @@
 **結果**：25 → 24（建單後）→ 25（取消後），跟 `7526d17`（取消訂單庫存沒回補的修復）當時的回歸測試邏輯一致，只是這次驗收動作全由 agent 用瀏覽器完成，不是我自己點。
 
 **跟片段3的差異**：片段3是「重現症狀」自動化，這次是「驗收修復」自動化——同一套 Playwright MCP 能力，用在練習2流程的最後一步（⑤回到頁面確認），而不是第一步。
+
+### 片段 5：每次 commit 後，agent 自己跑一輪全站 smoke test
+
+**做法**：這次 session 每 commit 一次 `PROCESS.md`／`.gitignore` 變動，就請 agent 用 Playwright MCP 依序打開 `/Orders`、`/Products`、`/Products/LowStock`、`/Customers`、`/Orders/Create`、`/Orders/Details/206`、`/Customers/9/Orders` 這幾條主要路徑，逐頁截圖確認畫面正常，最後再跑一次 `dotnet test` 當最終回歸關卡。
+
+**意外收穫**：中途我自己記錯／亂猜了兩條不存在的巢狀路由 `/Products/9/Orders`、`/Customers/9/Orders/207`（正確應該是 `/Customers/9/Orders`、`/Orders/Details/207`），agent 兩次都直接回報 HTTP 錯誤（`net::ERR_HTTP_RESPONSE_CODE_FAILURE`），沒有含糊地說「頁面正常」，也沒有自己亂猜路由硬套——等於順便驗證了不存在的路由會乾淨地回 404，不是 500 或意外行為。
+
+**跟片段3、4的關係**：片段3是重現症狀自動化、片段4是驗收單一修復自動化，這次是把「commit 後全站巡一輪＋跑測試」這個原本要人手動點過一輪的收尾動作也交給 agent，而且過程中 agent 對「路由到底存不存在」這件事沒有照單全收我的猜測，是直接讓瀏覽器的真實回應說話。
