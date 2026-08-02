@@ -151,3 +151,17 @@
 **意外收穫**：中途我自己記錯／亂猜了兩條不存在的巢狀路由 `/Products/9/Orders`、`/Customers/9/Orders/207`（正確應該是 `/Customers/9/Orders`、`/Orders/Details/207`），agent 兩次都直接回報 HTTP 錯誤（`net::ERR_HTTP_RESPONSE_CODE_FAILURE`），沒有含糊地說「頁面正常」，也沒有自己亂猜路由硬套——等於順便驗證了不存在的路由會乾淨地回 404，不是 500 或意外行為。
 
 **跟片段3、4的關係**：片段3是重現症狀自動化、片段4是驗收單一修復自動化，這次是把「commit 後全站巡一輪＋跑測試」這個原本要人手動點過一輪的收尾動作也交給 agent，而且過程中 agent 對「路由到底存不存在」這件事沒有照單全收我的猜測，是直接讓瀏覽器的真實回應說話。
+
+### 片段 6：接上 OrderHub MCP 後，同一句問題的 before/after 對照
+
+**我怎麼問**：兩次都是同一句「哪些商品庫存低於 5?」，沒帶任何額外提示。
+
+**沒有 MCP 時（模擬關掉 `.mcp.json` 之後 agent 只能怎麼答）**：agent 得先讀 `appsettings.json` 找連線字串（`Server=localhost;Database=OrderHubTraining;...`），再回頭確認 `Products` 表跟 `StockQuantity`／`IsActive` 欄位名稱，才能手刻一句 SQL：
+```
+sqlcmd -S localhost -d OrderHubTraining -E -Q "SELECT Sku, Name, StockQuantity FROM Products WHERE StockQuantity < 5 AND IsActive = 1 ORDER BY StockQuantity ASC;"
+```
+中途多踩了一個坑：`sqlcmd` 預設輸出編碼把商品中文名稱印成亂碼（SKU 跟庫存數字正常，`Name` 欄位變成看不懂的符號），得另外處理編碼才看得懂完整結果。前後共走了「讀設定檔 → 讀程式碼確認表名/欄位名 → 手寫 SQL → 排查中文編碼」四步。
+
+**開啟 MCP 後**：直接呼叫 `mcp__orderhub__low_stock({ threshold: 5 })`，一次工具呼叫拿到結構化 JSON，五筆商品的 Sku／正確 UTF-8 中文名稱／庫存量一次到位，不用猜表名或欄位名，也沒有編碼問題。
+
+**結果比對**：兩邊查到的商品與庫存數字完全一致——`SKU-1048`/2、`SKU-1005`/3、`SKU-1023`/3、`SKU-1014`/4、`SKU-1032`/4，只是沒 MCP 那邊要多繞四步而且中文名稱是亂碼，有 MCP 一次工具呼叫就乾淨拿到全部欄位。
