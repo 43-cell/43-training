@@ -127,3 +127,11 @@
 **我怎麼問**：貼上完整規格後明講「先不要寫程式，請給我一份實作計畫」，並列出四個必須回答的問題（檔案清單與職責、每層怎麼分工、近 30 天銷量放哪一層會不會 N+1、threshold 驗證用什麼機制），還指定「動手前先讀 ProductsController/ProductService/Index.cshtml，沿用同一套慣例，不要自創寫法」。
 
 **它怎麼答**：先讀完指定的檔案，再進 Plan Mode 寫出對應四點的完整計畫（含實際 LINQ 查詢草稿），核准後才開始寫程式；套用計畫時發現原本規劃的單一 LEFT JOIN 查詢在 EF Core InMemory 測試環境會炸掉，agent 主動講清楚這個落差、改成兩條查詢的替代方案（並解釋為什麼還是沒有 N+1），而不是悄悄改掉不講。
+
+### 片段 3：接上 Playwright MCP 後，「親手重現」不再是人專屬的步驟
+
+**練習 2 當時的做法**：`activity-guideline.md` 的建議流程第一步是「①在頁面上親手重現」——三個客訴都是我自己在瀏覽器點 `/Orders`、翻頁、建單、取消訂單，把看到的頁碼／金額／庫存數字記下來，再打字報給 agent（例如客訴1報「翻到第11頁看到#201」）。當時 agent 沒有瀏覽器能力，這一步只能由人做。
+
+**這次的做法**：裝了 `claude mcp add playwright -- npx @playwright/mcp@latest` 之後，直接請 agent 用 Playwright MCP 打開 `localhost:5150`，agent 自己跑 `browser_navigate` 開站（跳轉到 `/Orders`）、`browser_snapshot`／`browser_take_screenshot` 看畫面、`browser_click` 點進 `#206` 訂單明細、再點「查看此客戶的所有訂單」連結——整條瀏覽器操作路徑不需要我動手點。
+
+**對比**：練習2的「①在頁面上親手重現」當時是人專屬的步驟，因為 agent 沒有瀏覽器；現在這一步 agent 自己就能做（開頁、點連結、截圖）。但「該重現哪個症狀」「畫面顯示的數字對不對」這種判斷仍然要人把關——agent 接手的是「動手操作瀏覽器」這個體力活，不是判斷本身。
